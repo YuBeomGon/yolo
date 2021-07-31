@@ -11,7 +11,7 @@ import torchvision
 import torchvision.transforms as transforms
 
 import numpy as np
-from grad_gated import Conv2dFunctionG
+from grad_gated import Conv2dFunction, FeatureExtractor
 
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152', 'resnext50_32x4d', 'resnext101_32x8d',
@@ -63,10 +63,12 @@ class BasicBlock(nn.Module):
         if dilation > 1:
             raise NotImplementedError("Dilation > 1 not supported in BasicBlock")
         # Both self.conv1 and self.downsample layers downsample the input when stride != 1
-        self.conv1 = conv3x3(inplanes, planes, stride)
+#         self.conv1 = conv3x3(inplanes, planes, stride)
+        self.conv1 = Conv2dFunction.apply
         self.bn1 = norm_layer(planes)
         self.relu = nn.ReLU(inplace=True)
-        self.conv2 = conv3x3(planes, planes)
+#         self.conv2 = conv3x3(planes, planes)
+        self.conv2 = Conv2dFunction.apply
         self.bn2 = norm_layer(planes)
         self.downsample = downsample
         self.stride = stride
@@ -75,17 +77,17 @@ class BasicBlock(nn.Module):
         identity = x
 
         out = self.conv1(x)
-        out = self.bn1(out)
         out = self.relu(out)
+        out = self.bn1(out)
 
         out = self.conv2(out)
-        out = self.bn2(out)
 
         if self.downsample is not None:
             identity = self.downsample(x)
 
         out += identity
         out = self.relu(out)
+        out = self.bn2(out)
 
         return out
 
@@ -129,21 +131,21 @@ class Bottleneck(nn.Module):
         identity = x
 
         out = self.conv1(x)
-        out = self.bn1(out)
         out = self.relu(out)
+        out = self.bn1(out)
 
         out = self.conv2(out)
-        out = self.bn2(out)
         out = self.relu(out)
+        out = self.bn2(out)
 
         out = self.conv3(out)
-        out = self.bn3(out)
 
         if self.downsample is not None:
             identity = self.downsample(x)
 
         out += identity
         out = self.relu(out)
+        out = self.bn3(out)
 
         return out
 
@@ -177,8 +179,10 @@ class ResNet(nn.Module):
                              "or a 3-element tuple, got {}".format(replace_stride_with_dilation))
         self.groups = groups
         self.base_width = width_per_group
-        self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=7, stride=2, padding=3,
-                               bias=False)
+#         self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=7, stride=2, padding=3,
+#                                bias=False)
+        self.conv1 = FeatureExtractor.apply
+        
         self.bn1 = norm_layer(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -237,8 +241,8 @@ class ResNet(nn.Module):
     def _forward_impl(self, x: Tensor) -> Tensor:
         # See note [TorchScript super()]
         x = self.conv1(x)
-        x = self.bn1(x)
         x = self.relu(x)
+        x = self.bn1(x)
         x = self.maxpool(x)
 
         x = self.layer1(x)
