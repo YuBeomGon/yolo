@@ -1,0 +1,10 @@
+*/trained_models/*
+*/*/trained_models/*
+*/*/*/trained_models/*
+data/annotations/*
+*/.ipynb_checkpoints/*
+*/*/.ipynb_checkpoints/*
+*/*/*/.ipynb_checkpoints/*
+patch_images
+*/__pycache__/*
+*/*/__pycache__/*
