@@ -293,6 +293,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
         output = model(images)
 #         print(output.shape)
         loss = criterion(output, target)
+#         print(loss)
         total_loss += loss.item()
 
         # measure accuracy and record loss
@@ -360,10 +361,10 @@ def validate(val_loader, model, criterion, args):
     return top1.avg
 
 
-def save_checkpoint(state, is_best, filename='../trained_model/sent2vec/checkpoint.pt'):
+def save_checkpoint(state, is_best, filename='../trained_model/gated/checkpoint.pt'):
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, '../trained_model/sent2vec/model_best.pt')
+        shutil.copyfile(filename, '../trained_model/gated/model_best.pt')
 
 
 class AverageMeter(object):

@@ -2,20 +2,15 @@ import torch
 from torch import Tensor
 import torch.nn as nn
 #from .._internally_replaced_utils import load_state_dict_from_url
-from torch.hub import load_state_dict_from_url
 from typing import Type, Any, Callable, Union, List, Optional
+from gated import Conv2dFunction1, Conv2dFunction2, Conv2dFunction3
+import torch.nn.parameter as param
 
-import torch.nn.functional as F
-import torch.optim as optim
-import torchvision
-import torchvision.transforms as transforms
-
-import numpy as np
-from grad_gated import Conv2dFunction, FeatureExtractor
 
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152', 'resnext50_32x4d', 'resnext101_32x8d',
            'wide_resnet50_2', 'wide_resnet101_2']
+
 
 model_urls = {
     'resnet18': 'https://download.pytorch.org/models/resnet18-f37072fd.pth',
@@ -29,6 +24,9 @@ model_urls = {
     'wide_resnet101_2': 'https://download.pytorch.org/models/wide_resnet101_2-32ee1156.pth',
 }
 
+# device = torch.device("cpu")
+device = torch.device("cuda")
+dtype = torch.float
 
 def conv3x3(in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1) -> nn.Conv2d:
     """3x3 convolution with padding"""
@@ -63,91 +61,112 @@ class BasicBlock(nn.Module):
         if dilation > 1:
             raise NotImplementedError("Dilation > 1 not supported in BasicBlock")
         # Both self.conv1 and self.downsample layers downsample the input when stride != 1
-#         self.conv1 = conv3x3(inplanes, planes, stride)
-        self.conv1 = Conv2dFunction.apply
+        if stride == 2 :
+            self.gatedconv1 = Conv2dFunction2.apply
+        else :
+            self.gatedconv1 = Conv2dFunction3.apply
+        #self.conv_w1 = torch.randn(planes, inplanes,3,3, device=device, dtype=dtype, 
+        #                          requires_grad=True)
+        conv_p1 = torch.nn.Parameter(torch.randn(planes, inplanes,3,3, device=device, dtype=dtype), 
+                                          requires_grad=True)   
+        nn.init.kaiming_normal_(conv_p1, mode='fan_out', nonlinearity='relu')        
+        self.register_parameter(name='conv1_w', param=conv_p1)
+        #self.conv1 = conv3x3(inplanes, planes, stride)
+        
         self.bn1 = norm_layer(planes)
         self.relu = nn.ReLU(inplace=True)
-#         self.conv2 = conv3x3(planes, planes)
-        self.conv2 = Conv2dFunction.apply
+#         self.relu = nn.ReLU(inplace=False)
+        self.gatedconv2 = Conv2dFunction3.apply
+        #self.conv_w2 = torch.randn(planes, planes,3,3, device=device, dtype=dtype, 
+        #                          requires_grad=True)   
+        conv_p2 = torch.nn.Parameter(torch.randn(planes, planes,3,3, device=device, dtype=dtype),
+                                          requires_grad=True)   
+        nn.init.kaiming_normal_(conv_p2, mode='fan_out', nonlinearity='relu')        
+        self.register_parameter(name='conv2_w', param=conv_p2)
+        #self.conv2 = conv3x3(planes, planes)
         self.bn2 = norm_layer(planes)
         self.downsample = downsample
         self.stride = stride
 
     def forward(self, x: Tensor) -> Tensor:
         identity = x
-
-        out = self.conv1(x)
-        out = self.relu(out)
+        ##forward(ctx, input, weight, bias=None, stride=1, padding=1, dilation=1, groups=1):
+        #out = self.conv1(x)
+        out = self.gatedconv1(x, self.conv1_w)
         out = self.bn1(out)
+        out = self.relu(out)
 
-        out = self.conv2(out)
-
+        #out = self.conv2(out)
+        out = self.gatedconv2(out, self.conv2_w)
+        out = self.bn2(out)
         if self.downsample is not None:
             identity = self.downsample(x)
 
         out += identity
         out = self.relu(out)
-        out = self.bn2(out)
-
+        
         return out
-
 
 class Bottleneck(nn.Module):
-    # Bottleneck in torchvision places the stride for downsampling at 3x3 convolution(self.conv2)
-    # while original implementation places the stride at the first 1x1 convolution(self.conv1)
-    # according to "Deep residual learning for image recognition"https://arxiv.org/abs/1512.03385.
-    # This variant is also known as ResNet V1.5 and improves accuracy according to
-    # https://ngc.nvidia.com/catalog/model-scripts/nvidia:resnet_50_v1_5_for_pytorch.
-
-    expansion: int = 4
-
-    def __init__(
-        self,
-        inplanes: int,
-        planes: int,
-        stride: int = 1,
-        downsample: Optional[nn.Module] = None,
-        groups: int = 1,
-        base_width: int = 64,
-        dilation: int = 1,
-        norm_layer: Optional[Callable[..., nn.Module]] = None
-    ) -> None:
+    def __init__(self) :
         super(Bottleneck, self).__init__()
-        if norm_layer is None:
-            norm_layer = nn.BatchNorm2d
-        width = int(planes * (base_width / 64.)) * groups
-        # Both self.conv2 and self.downsample layers downsample the input when stride != 1
-        self.conv1 = conv1x1(inplanes, width)
-        self.bn1 = norm_layer(width)
-        self.conv2 = conv3x3(width, width, stride, groups, dilation)
-        self.bn2 = norm_layer(width)
-        self.conv3 = conv1x1(width, planes * self.expansion)
-        self.bn3 = norm_layer(planes * self.expansion)
-        self.relu = nn.ReLU(inplace=True)
-        self.downsample = downsample
-        self.stride = stride
 
-    def forward(self, x: Tensor) -> Tensor:
-        identity = x
+# class Bottleneck(nn.Module):
+#     # Bottleneck in torchvision places the stride for downsampling at 3x3 convolution(self.conv2)
+#     # while original implementation places the stride at the first 1x1 convolution(self.conv1)
+#     # according to "Deep residual learning for image recognition"https://arxiv.org/abs/1512.03385.
+#     # This variant is also known as ResNet V1.5 and improves accuracy according to
+#     # https://ngc.nvidia.com/catalog/model-scripts/nvidia:resnet_50_v1_5_for_pytorch.
 
-        out = self.conv1(x)
-        out = self.relu(out)
-        out = self.bn1(out)
+#     expansion: int = 4
 
-        out = self.conv2(out)
-        out = self.relu(out)
-        out = self.bn2(out)
+#     def __init__(
+#         self,
+#         inplanes: int,
+#         planes: int,
+#         stride: int = 1,
+#         downsample: Optional[nn.Module] = None,
+#         groups: int = 1,
+#         base_width: int = 64,
+#         dilation: int = 1,
+#         norm_layer: Optional[Callable[..., nn.Module]] = None
+#     ) -> None:
+#         super(Bottleneck, self).__init__()
+#         if norm_layer is None:
+#             norm_layer = nn.BatchNorm2d
+#         width = int(planes * (base_width / 64.)) * groups
+#         # Both self.conv2 and self.downsample layers downsample the input when stride != 1
+#         self.conv1 = conv1x1(inplanes, width)
+#         self.bn1 = norm_layer(width)
+#         self.conv2 = conv3x3(width, width, stride, groups, dilation)
+#         self.bn2 = norm_layer(width)
+#         self.conv3 = conv1x1(width, planes * self.expansion)
+#         self.bn3 = norm_layer(planes * self.expansion)
+#         self.relu = nn.ReLU(inplace=True)
+#         self.downsample = downsample
+#         self.stride = stride
 
-        out = self.conv3(out)
+#     def forward(self, x: Tensor) -> Tensor:
+#         identity = x
 
-        if self.downsample is not None:
-            identity = self.downsample(x)
+#         out = self.conv1(x)
+#         out = self.bn1(out)
+#         out = self.relu(out)
 
-        out += identity
-        out = self.relu(out)
-        out = self.bn3(out)
+#         out = self.conv2(out)
+#         out = self.bn2(out)
+#         out = self.relu(out)
 
-        return out
+#         out = self.conv3(out)
+#         out = self.bn3(out)
+
+#         if self.downsample is not None:
+#             identity = self.downsample(x)
+
+#         out += identity
+#         out = self.relu(out)
+
+#         return out
 
 
 class ResNet(nn.Module):
@@ -177,14 +196,22 @@ class ResNet(nn.Module):
         if len(replace_stride_with_dilation) != 3:
             raise ValueError("replace_stride_with_dilation should be None "
                              "or a 3-element tuple, got {}".format(replace_stride_with_dilation))
+        print('dilation', replace_stride_with_dilation)
         self.groups = groups
-        self.base_width = width_per_group
+        self.base_width = width_per_group   
+        
+        self.gatedconv = Conv2dFunction1.apply
+        #self.conv_w = torch.randn(self.inplanes,3,7,7, dtype=dtype, 
+        #                          requires_grad=True)
+        conv_p = torch.nn.Parameter(torch.randn(self.inplanes,3,7,7, dtype=dtype), 
+                                         requires_grad=True) 
+        nn.init.kaiming_normal_(conv_p, mode='fan_out', nonlinearity='relu')
 #         self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=7, stride=2, padding=3,
 #                                bias=False)
-        self.conv1 = FeatureExtractor.apply
-        
+        self.register_parameter(name='conv_w', param=conv_p)
         self.bn1 = norm_layer(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
+#         self.relu = nn.ReLU(inplace=False)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.layer1 = self._make_layer(block, 64, layers[0])
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2,
@@ -222,12 +249,14 @@ class ResNet(nn.Module):
             self.dilation *= stride
             stride = 1
         if stride != 1 or self.inplanes != planes * block.expansion:
+            print('downsample')
             downsample = nn.Sequential(
                 conv1x1(self.inplanes, planes * block.expansion, stride),
                 norm_layer(planes * block.expansion),
             )
 
         layers = []
+        print('stride', stride)
         layers.append(block(self.inplanes, planes, stride, downsample, self.groups,
                             self.base_width, previous_dilation, norm_layer))
         self.inplanes = planes * block.expansion
@@ -240,9 +269,11 @@ class ResNet(nn.Module):
 
     def _forward_impl(self, x: Tensor) -> Tensor:
         # See note [TorchScript super()]
-        x = self.conv1(x)
-        x = self.relu(x)
+        #x = self.conv1(x)
+        x = self.gatedconv(x, self.conv_w)
+        
         x = self.bn1(x)
+        x = self.relu(x)
         x = self.maxpool(x)
 
         x = self.layer1(x)
@@ -269,10 +300,10 @@ def _resnet(
     **kwargs: Any
 ) -> ResNet:
     model = ResNet(block, layers, **kwargs)
-    if pretrained:
-        state_dict = load_state_dict_from_url(model_urls[arch],
-                                              progress=progress)
-        model.load_state_dict(state_dict)
+#    if pretrained:
+#        state_dict = load_state_dict_from_url(model_urls[arch],
+#                                              progress=progress)
+#        model.load_state_dict(state_dict)
     return model
 
 
