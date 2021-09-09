@@ -104,8 +104,6 @@ class BasicBlock(nn.Module):
             identity = self.downsample(x)
 
         out += identity
-        
-        
 
         return out
 
@@ -308,7 +306,7 @@ def _resnet(
     return model
 
 
-def resnet18(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
+def resnet18_gated(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
     r"""ResNet-18 model from
     `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_.
     Args:
@@ -319,7 +317,7 @@ def resnet18(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> 
                    **kwargs)
 
 
-def resnet34(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
+def resnet34_gated(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
     r"""ResNet-34 model from
     `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_.
     Args:
@@ -330,7 +328,7 @@ def resnet34(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> 
                    **kwargs)
 
 
-def resnet50(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
+def resnet50_gated(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
     r"""ResNet-50 model from
     `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_.
     Args:
@@ -341,7 +339,7 @@ def resnet50(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> 
                    **kwargs)
 
 
-def resnet101(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
+def resnet101_gated(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
     r"""ResNet-101 model from
     `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_.
     Args:
@@ -352,7 +350,7 @@ def resnet101(pretrained: bool = False, progress: bool = True, **kwargs: Any) ->
                    **kwargs)
 
 
-def resnet152(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
+def resnet152_gated(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
     r"""ResNet-152 model from
     `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_.
     Args:
