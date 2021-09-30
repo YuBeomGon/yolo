@@ -171,3 +171,20 @@ def fasterrcnn_resnet152_fpn(pretrained=False, progress=True,
 #         model.load_state_dict(state_dict)
         overwrite_eps(model, 0.0)
     return model
+
+def fasterrcnn_resnet18_fpn(pretrained=False, progress=True,
+                            num_classes=91, pretrained_backbone=True, trainable_backbone_layers=None, **kwargs):
+    trainable_backbone_layers = _validate_trainable_layers(
+        pretrained or pretrained_backbone, trainable_backbone_layers, 5, 3)
+
+    if pretrained:
+        # no need to download the backbone if pretrained is set
+        pretrained_backbone = True
+    backbone = resnet_fpn_backbone('resnet18', pretrained_backbone, trainable_layers=trainable_backbone_layers)
+    model = FasterRCNN(backbone, num_classes, min_size=2048, max_size=2048, **kwargs)
+    if pretrained:
+#         state_dict = load_state_dict_from_url(model_urls['fasterrcnn_resnet50_fpn_coco'],
+#                                               progress=progress)
+#         model.load_state_dict(state_dict)
+        overwrite_eps(model, 0.0)
+    return model    
