@@ -14,7 +14,7 @@ from scheduler import CosineAnnealingWarmUpRestarts
 
 device = torch.device("cuda")
 dtype = torch.float
-epochs = 100
+epochs = 32
 learning_rate = 0.1
 
 # lr_list = [1] * epochs
@@ -92,7 +92,7 @@ def test(model, dataloader):
 
 def adjust_learning_rate(optimizer, epoch, lr_rate=learning_rate):
     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-    lr = lr_rate * (0.1 ** (epoch / 8))
+    lr = lr_rate * (0.1 ** (epoch // 8))
 #     epoch += 1
 #     lr = lr_rate * (math.cos(i*math.pi/(epoch*2)))* math.exp(1.*i*-e/epoch)
     for param_group in optimizer.param_groups:
@@ -149,11 +149,13 @@ def train(model, trainloader, valloader, decay=1e-4, opt='adam') :
         print('error, use adam')
         optimizer = optim.Adam(model.parameters(), lr=1e-3)
     print(optimizer)
-    scheduler = CosineAnnealingWarmUpRestarts(optimizer, T_0=5, T_mult=2, eta_max=0.1,  T_up=2, gamma=0.5)
+    scheduler = None
+#     if not opt == 'adam' :
+#         scheduler = CosineAnnealingWarmUpRestarts(optimizer, T_0=8, T_mult=1, eta_max=0.1,  T_up=2, gamma=0.5)
 #     
     for epoch in range(epochs):
         print(f"Epoch {epoch+1} of {epochs}")
-#         adjust_learning_rate(optimizer, epoch)
+        adjust_learning_rate(optimizer, epoch)
         EPOCH_lr = optimizer.param_groups[0]["lr"]
         train_epoch_loss, train_epoch_accuracy = fit(model, trainloader, optimizer)
         val_epoch_loss, val_epoch_accuracy = validate(model, valloader)
@@ -163,7 +165,8 @@ def train(model, trainloader, valloader, decay=1e-4, opt='adam') :
         val_accuracy.append(val_epoch_accuracy)
         print('train loss {:.4f} val loss {:.4f} train acc {:.2f} val acc {:.2f} lr {:.4f}'.format(
             train_epoch_loss, val_epoch_loss, train_epoch_accuracy, val_epoch_accuracy, EPOCH_lr))
-        scheduler.step()
+        if not scheduler == None :
+            scheduler.step()
     end = time.time()
     print((end-start)/60, 'minutes')
     torch.save(model.state_dict(), f"../trained_models/resnet18_epochs{epochs}.pth")

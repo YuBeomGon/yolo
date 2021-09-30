@@ -56,6 +56,19 @@ def set_activation(activation) :
 #     print(act)   
     return act
 
+class AddNoise(nn.Module) :
+    def __init__(self) :
+        super(AddNoise, self).__init__()
+            
+    def forward(self, x: Tensor) -> Tensor:
+        if self.training and torch.rand(1).item() > 0.5:
+            x_cpu = x.detach().cpu()
+#             mean = torch.mean(x_cpu, dim=[0,2,3])
+#             offset = torch.abs(x_cpu - mean[None,:,None,None])
+            offset = torch.abs(x_cpu)
+            x += (offset*torch.randn(x_cpu.shape)*0.02).to('cuda')
+        return x
+    
 
 class BasicBlock(nn.Module):
     expansion: int = 1
@@ -70,7 +83,8 @@ class BasicBlock(nn.Module):
         base_width: int = 64,
         dilation: int = 1,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
-        activation : str = 'relu'
+        activation : str = 'relu',
+        isNoise : bool = False
     ) -> None:
         super(BasicBlock, self).__init__()
         if norm_layer is None:
@@ -89,6 +103,8 @@ class BasicBlock(nn.Module):
         self.stride = stride
         
         self.act = set_activation(activation)
+        self.isNoise = isNoise
+        self.Noise = AddNoise()
         print('baskicblock', self.act)
             
 
@@ -106,9 +122,11 @@ class BasicBlock(nn.Module):
         if self.downsample is not None:
             identity = self.downsample(x)
 
-#         out += identity
+        out += identity
         x = self.act(x)
         
+        if self.isNoise == True :
+            out = self.Noise(out)
 
         return out
 
@@ -132,7 +150,8 @@ class Bottleneck(nn.Module):
         base_width: int = 64,
         dilation: int = 1,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
-        activation : str = 'relu'
+        activation : str = 'relu',
+        isNoise : bool = False
     ) -> None:
         super(Bottleneck, self).__init__()
         if norm_layer is None:
@@ -149,6 +168,8 @@ class Bottleneck(nn.Module):
         self.downsample = downsample
         self.stride = stride
         self.act = set_activation(activation)
+        self.isNoise = isNoise
+        self.Noise = AddNoise()
         print('bottlenet', self.act)
 
     def forward(self, x: Tensor) -> Tensor:
@@ -168,8 +189,11 @@ class Bottleneck(nn.Module):
         if self.downsample is not None:
             identity = self.downsample(x)
 
-#         out += identity
+        out += identity
         out = self.act(out)
+        
+        if self.isNoise == True :
+            out = self.Noise(out)
 
         return out
 
@@ -186,11 +210,13 @@ class ResNet(nn.Module):
         width_per_group: int = 64,
         replace_stride_with_dilation: Optional[List[bool]] = None,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
-        activation : str = 'relu'
+        activation : str = 'relu',
+        isNoise : bool = False
     ) -> None:
         super(ResNet, self).__init__()
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
+        print('norm layer', norm_layer)
         self._norm_layer = norm_layer
 
         self.inplanes = 64
@@ -213,6 +239,7 @@ class ResNet(nn.Module):
 #         self.relu = nn.GELU()
 #         self.custom_act =  cumtom_sig.apply
         self.activation = activation
+        self.isNoise = isNoise
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.layer1 = self._make_layer(block, 64, layers[0])
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2,
@@ -259,12 +286,13 @@ class ResNet(nn.Module):
         layers = []
         print('stride', stride)
         layers.append(block(self.inplanes, planes, stride, downsample, self.groups,
-                            self.base_width, previous_dilation, norm_layer, activation=self.activation))
+                            self.base_width, previous_dilation, norm_layer, 
+                            activation=self.activation, isNoise=self.isNoise))
         self.inplanes = planes * block.expansion
         for _ in range(1, blocks):
             layers.append(block(self.inplanes, planes, groups=self.groups,
                                 base_width=self.base_width, dilation=self.dilation,
-                                norm_layer=norm_layer, activation=self.activation))
+                                norm_layer=norm_layer, activation=self.activation, isNoise=self.isNoise))
 
         return nn.Sequential(*layers)
 
