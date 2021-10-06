@@ -17,10 +17,16 @@ import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
+from scheduler import CosineAnnealingWarmUpRestarts
+from resnet import *
+from batchnorm import BatchNorm, CustomBatchNorm2d
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
     and callable(models.__dict__[name]))
+
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"  
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('data', metavar='DIR',
@@ -30,7 +36,7 @@ parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet18',
                     help='model architecture: ' +
                         ' | '.join(model_names) +
                         ' (default: resnet18)')
-parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
+parser.add_argument('-j', '--workers', default=16, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 parser.add_argument('--epochs', default=90, type=int, metavar='N',
                     help='number of total epochs to run')
@@ -60,7 +66,7 @@ parser.add_argument('--world-size', default=-1, type=int,
                     help='number of nodes for distributed training')
 parser.add_argument('--rank', default=-1, type=int,
                     help='node rank for distributed training')
-parser.add_argument('--dist-url', default='tcp://224.66.41.62:23456', type=str,
+parser.add_argument('--dist-url', default='tcp://192.168.40.242:50019', type=str,
                     help='url used to set up distributed training')
 parser.add_argument('--dist-backend', default='nccl', type=str,
                     help='distributed backend')
@@ -73,6 +79,9 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
                          'N processes per node, which has N GPUs. This is the '
                          'fastest way to use PyTorch for either single node or '
                          'multi node data parallel training')
+parser.add_argument('--saved-dir', default='trained_model/addNoise/beforeRelu/', type=str,
+                    help='url used to set up distributed training')
+parser.add_argument('--isNoise', default=False, type=bool, help='flag for add noise or not')
 
 best_acc1 = 0
 
@@ -129,12 +138,14 @@ def main_worker(gpu, ngpus_per_node, args):
         dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
                                 world_size=args.world_size, rank=args.rank)
     # create model
-    if args.pretrained:
-        print("=> using pre-trained model '{}'".format(args.arch))
-        model = models.__dict__[args.arch](pretrained=True)
-    else:
-        print("=> creating model '{}'".format(args.arch))
-        model = models.__dict__[args.arch]()
+#     if args.pretrained:
+#         print("=> using pre-trained model '{}'".format(args.arch))
+#         model = models.__dict__[args.arch](pretrained=True)
+#     else:
+#         print("=> creating model '{}'".format(args.arch))
+#         model = models.__dict__[args.arch]()
+    print('isNoise', args.isNoise)
+    model = resnet18(pretrained=False, isNoise=args.isNoise)
 
     if not torch.cuda.is_available():
         print('using CPU, this will be slow')
@@ -285,6 +296,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
         data_time.update(time.time() - end)
 
         if args.gpu is not None:
+#             images = images.cuda(args.gpu, non_blocking=True)
             images = images.cuda(args.gpu, non_blocking=True)
         if torch.cuda.is_available():
             target = target.cuda(args.gpu, non_blocking=True)
@@ -361,10 +373,17 @@ def validate(val_loader, model, criterion, args):
     return top1.avg
 
 
-def save_checkpoint(state, is_best, filename='../trained_model/gated/checkpoint.pt'):
+def save_checkpoint(state, is_best, filename='trained_model/addNoise/checkpoint.pt'):
+    args = parser.parse_args()
+    filename = args.saved_dir
+    torch.save(state, filename+'checkpoint.pt')
+    if is_best:
+        shutil.copyfile(filename+'checkpoint.pt', filename+'model_best.pt')
+        
+def save_checkpoint1(state, is_best, filename='../trained_model/gated1/checkpoint.pt'):
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, '../trained_model/gated/model_best.pt')
+        shutil.copyfile(filename, '../trained_model/gated1/model_best.pt')        
 
 
 class AverageMeter(object):

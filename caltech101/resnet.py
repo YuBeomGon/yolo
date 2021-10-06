@@ -1,9 +1,10 @@
+# %%
 import torch
 from torch import Tensor
 import torch.nn as nn
-#from .._internally_replaced_utils import load_state_dict_from_url
+# from .._internally_replaced_utils import load_state_dict_from_url
+from torch.hub import load_state_dict_from_url
 from typing import Type, Any, Callable, Union, List, Optional
-from gated import Conv2dFunction1, Conv2dFunction2, Conv2dFunction3, cumtom_sig, Square
 
 
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
@@ -24,52 +25,49 @@ model_urls = {
 }
 
 
+# %%
 def conv3x3(in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1) -> nn.Conv2d:
     """3x3 convolution with padding"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=dilation, groups=groups, bias=False, dilation=dilation)
 
-
+# %%
 def conv1x1(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
     """1x1 convolution"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 
-def set_activation(activation) :
-   
-    if activation == 'relu' :
-        act = nn.ReLU()
-    elif activation == 'elu' :
-        act = nn.ELU()
-    elif activation == 'gelu' :
-        act = nn.GELU()
-    elif activation == 'sigmoid' :
-        act = nn.Sigmoid()
-    elif activation == 'leakyrelu' :
-        act = nn.LeakyReLU(negative_slope=0.5)
-    elif activation == 'tanh' :
-        act = nn.Tanh()
-    elif activation == 'custom' :
-        act = self.custom_act
-    else :
-        print('no act, so use defalut relu')
-        act = nn.ReLU()
-#     print(act)   
-    return act
-
-class AddNoise(nn.Module) :
-    def __init__(self) :
-        super(AddNoise, self).__init__()
+# %%
+class RandomNoise(nn.Module) :
+    def __init__(self,scale=0.02, threshold=0.5) :
+        super(RandomNoise, self).__init__()
+        self.scale = scale
+        self.threshold = threshold
             
     def forward(self, x: Tensor) -> Tensor:
-        if self.training and torch.rand(1).item() > 0.5:
+        if self.training and torch.rand(1).item() > self.threshold:
             x_cpu = x.detach().cpu()
-#             mean = torch.mean(x_cpu, dim=[0,2,3])
-#             offset = torch.abs(x_cpu - mean[None,:,None,None])
-            offset = torch.abs(x_cpu)
-            x += (offset*torch.randn(x_cpu.shape)*0.02).to('cuda')
+            x += (torch.randn(x_cpu.shape)*self.scale).to('cuda')
         return x
     
+class ManifoldNoise(nn.Module) :
+    def __init__(self,scale=0.02, threshold=0.5, beforerelu=False) :
+        super(ManifoldNoise, self).__init__()
+        self.scale = scale
+        self.threshold = threshold
+        self.beforerelu = beforerelu
+            
+    def forward(self, x: Tensor) -> Tensor:
+        if self.training and torch.rand(1).item() > self.threshold:
+            x_cpu = x.detach().cpu()
+            if self.beforerelu == True :
+                mean = torch.mean(x_cpu, dim=[0,2,3])
+                offset = torch.abs(x_cpu - mean[None,:,None,None])
+            else :
+                offset = torch.abs(x_cpu)
+            x += (offset*torch.randn(x_cpu.shape)*self.scale).to('cuda')
+        return x    
 
+# %%
 class BasicBlock(nn.Module):
     expansion: int = 1
 
@@ -82,9 +80,7 @@ class BasicBlock(nn.Module):
         groups: int = 1,
         base_width: int = 64,
         dilation: int = 1,
-        norm_layer: Optional[Callable[..., nn.Module]] = None,
-        activation : str = 'relu',
-        isNoise : bool = False
+        norm_layer: Optional[Callable[..., nn.Module]] = None
     ) -> None:
         super(BasicBlock, self).__init__()
         if norm_layer is None:
@@ -96,25 +92,18 @@ class BasicBlock(nn.Module):
         # Both self.conv1 and self.downsample layers downsample the input when stride != 1
         self.conv1 = conv3x3(inplanes, planes, stride)
         self.bn1 = norm_layer(planes)
-#         self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=True)
         self.conv2 = conv3x3(planes, planes)
         self.bn2 = norm_layer(planes)
         self.downsample = downsample
         self.stride = stride
-        
-        self.act = set_activation(activation)
-        self.isNoise = isNoise
-        self.Noise = AddNoise()
-        print('baskicblock', self.act)
-            
 
     def forward(self, x: Tensor) -> Tensor:
-        
         identity = x
 
         out = self.conv1(x)
         out = self.bn1(out)
-        out = self.act(out)
+        out = self.relu(out)
 
         out = self.conv2(out)
         out = self.bn2(out)
@@ -123,14 +112,12 @@ class BasicBlock(nn.Module):
             identity = self.downsample(x)
 
         out += identity
-        x = self.act(x)
-        
-        if self.isNoise == True :
-            out = self.Noise(out)
+        out = self.relu(out)
 
         return out
 
 
+# %%
 class Bottleneck(nn.Module):
     # Bottleneck in torchvision places the stride for downsampling at 3x3 convolution(self.conv2)
     # while original implementation places the stride at the first 1x1 convolution(self.conv1)
@@ -149,9 +136,7 @@ class Bottleneck(nn.Module):
         groups: int = 1,
         base_width: int = 64,
         dilation: int = 1,
-        norm_layer: Optional[Callable[..., nn.Module]] = None,
-        activation : str = 'relu',
-        isNoise : bool = False
+        norm_layer: Optional[Callable[..., nn.Module]] = None
     ) -> None:
         super(Bottleneck, self).__init__()
         if norm_layer is None:
@@ -167,21 +152,17 @@ class Bottleneck(nn.Module):
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
-        self.act = set_activation(activation)
-        self.isNoise = isNoise
-        self.Noise = AddNoise()
-        print('bottlenet', self.act)
 
     def forward(self, x: Tensor) -> Tensor:
         identity = x
 
         out = self.conv1(x)
         out = self.bn1(out)
-        out = self.act(out)
+        out = self.relu(out)
 
         out = self.conv2(out)
         out = self.bn2(out)
-        out = self.act(out)
+        out = self.relu(out)
 
         out = self.conv3(out)
         out = self.bn3(out)
@@ -190,34 +171,36 @@ class Bottleneck(nn.Module):
             identity = self.downsample(x)
 
         out += identity
-        out = self.act(out)
-        
-        if self.isNoise == True :
-            out = self.Noise(out)
+        out = self.relu(out)
 
         return out
 
-
+# %%
 class ResNet(nn.Module):
 
     def __init__(
         self,
         block: Type[Union[BasicBlock, Bottleneck]],
         layers: List[int],
-        num_classes: int = 101,
+        num_classes: int = 1000,
         zero_init_residual: bool = False,
         groups: int = 1,
         width_per_group: int = 64,
         replace_stride_with_dilation: Optional[List[bool]] = None,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
-        activation : str = 'relu',
-        isNoise : bool = False
+        isNoise : bool = False,
+        threshold : float = 0.5,
+        scale : float = 0.02,
+        beforerelu : bool = False
     ) -> None:
         super(ResNet, self).__init__()
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
-        print('norm layer', norm_layer)
         self._norm_layer = norm_layer
+        self.isNoise = isNoise
+        self.threshold = threshold
+        self.scale = scale
+        self.beforerelu = beforerelu
 
         self.inplanes = 64
         self.dilation = 1
@@ -228,18 +211,12 @@ class ResNet(nn.Module):
         if len(replace_stride_with_dilation) != 3:
             raise ValueError("replace_stride_with_dilation should be None "
                              "or a 3-element tuple, got {}".format(replace_stride_with_dilation))
-        print('dilation', replace_stride_with_dilation)
         self.groups = groups
         self.base_width = width_per_group
         self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=7, stride=2, padding=3,
                                bias=False)
         self.bn1 = norm_layer(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
-#         self.relu = nn.ELU(alpha=1.0, inplace=False)
-#         self.relu = nn.GELU()
-#         self.custom_act =  cumtom_sig.apply
-        self.activation = activation
-        self.isNoise = isNoise
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.layer1 = self._make_layer(block, 64, layers[0])
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2,
@@ -277,22 +254,20 @@ class ResNet(nn.Module):
             self.dilation *= stride
             stride = 1
         if stride != 1 or self.inplanes != planes * block.expansion:
-            print('downsample')
             downsample = nn.Sequential(
                 conv1x1(self.inplanes, planes * block.expansion, stride),
                 norm_layer(planes * block.expansion),
             )
 
         layers = []
-        print('stride', stride)
         layers.append(block(self.inplanes, planes, stride, downsample, self.groups,
-                            self.base_width, previous_dilation, norm_layer, 
-                            activation=self.activation, isNoise=self.isNoise))
+                            self.base_width, previous_dilation, norm_layer. 
+                            self.isNoise, self.scale, self.threshold, self))
         self.inplanes = planes * block.expansion
         for _ in range(1, blocks):
             layers.append(block(self.inplanes, planes, groups=self.groups,
                                 base_width=self.base_width, dilation=self.dilation,
-                                norm_layer=norm_layer, activation=self.activation, isNoise=self.isNoise))
+                                norm_layer=norm_layer))
 
         return nn.Sequential(*layers)
 
@@ -302,7 +277,7 @@ class ResNet(nn.Module):
         x = self.bn1(x)
         x = self.relu(x)
         x = self.maxpool(x)
-        
+
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
@@ -327,10 +302,10 @@ def _resnet(
     **kwargs: Any
 ) -> ResNet:
     model = ResNet(block, layers, **kwargs)
-#    if pretrained:
-#        state_dict = load_state_dict_from_url(model_urls[arch],
-#                                              progress=progress)
-#        model.load_state_dict(state_dict)
+    if pretrained:
+        state_dict = load_state_dict_from_url(model_urls[arch],
+                                              progress=progress)
+        model.load_state_dict(state_dict)
     return model
 
 

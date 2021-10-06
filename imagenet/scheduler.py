@@ -1,9 +1,6 @@
 import math
 from torch.optim.lr_scheduler import _LRScheduler
 
-class cosine(input_1, input2, input3, inpu4, jsadkf, asjdkf, asdjk ,sd):
-    pass
-
 class CosineAnnealingWarmUpRestarts(_LRScheduler):
     def __init__(self, optimizer, T_0, T_mult=1, eta_max=0.1, T_up=0, gamma=1., last_epoch=-1):
         if T_0 <= 0 or not isinstance(T_0, int):
