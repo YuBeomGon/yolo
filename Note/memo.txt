@@ -1,2 +1,5 @@
 doai github 계정 personal access token
 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
+
+
+rsync -avz --progress -e "ssh -p 16022" /home/Dataset/scl beomgon@211.184.186.64:/home/beomgon/Dataset/
